@@ -21,12 +21,13 @@ namespace SKFProductAssistant.Functions.IntegrationTests
         public TestFixture()
         {
             _testDataPath = CreateTestDataDirectoryWithRealFiles();
-
+      
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string>
                 {
-                    ["AzureOpenAI:Endpoint"] = "",
-                    ["AzureOpenAI:ApiKey"] = "",
+                    ["AzureOpenAI:Endpoint"] = Environment.GetEnvironmentVariable("AzureOpenAI__Endpoint")
+            ?? "https://skf-openai-dev-eval.openai.azure.com/",
+                    ["AzureOpenAI:ApiKey"] = Environment.GetEnvironmentVariable("AzureOpenAI__ApiKey") ?? "test-key",
                     ["AzureOpenAI:DeploymentName"] = "gpt-4o-mini",
                     ["AzureOpenAI:ModelName"] = "gpt-4o-mini",
                     ["AzureOpenAI:ApiVersion"] = "2024-08-01-preview",

@@ -1,5 +1,4 @@
-﻿// Infrastructure/Services/AzureOpenAIService.cs
-using Azure;
+﻿using Azure;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -7,218 +6,299 @@ using SKFProductAssistant.Application.DTOs;
 using SKFProductAssistant.Application.Interfaces;
 using SKFProductAssistant.Domain.Entities;
 using SKFProductAssistant.Domain.ValueObjects;
-using System.Text.Json;
+using System.Text;
 
 namespace SKFProductAssistant.Infrastructure.Services
 {
     public class AzureOpenAIService : IAIService
     {
-        private readonly OpenAIClient _openAIClient;
+        private readonly OpenAIClient _client;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AzureOpenAIService> _logger;
         private readonly string _deploymentName;
+        private readonly string _modelName;
+        private readonly string _apiVersion;
+        private readonly int _maxTokens;
+        private readonly float _temperature;
+        private readonly string _systemPrompt;
 
         public AzureOpenAIService(IConfiguration configuration, ILogger<AzureOpenAIService> logger)
         {
             _configuration = configuration;
             _logger = logger;
 
-            var endpoint = _configuration["AzureOpenAI:Endpoint"];
-            var apiKey = _configuration["AzureOpenAI:ApiKey"];
-            _deploymentName = _configuration["AzureOpenAI:DeploymentName"] ?? "gpt-4";
+            var endpoint = _configuration["AzureOpenAI:Endpoint"]
+                ?? throw new InvalidOperationException("AzureOpenAI:Endpoint is not configured");
+            var apiKey = _configuration["AzureOpenAI:ApiKey"]
+                ?? throw new InvalidOperationException("AzureOpenAI:ApiKey is not configured");
 
-            _openAIClient = new OpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
-        }
+            _deploymentName = _configuration["AzureOpenAI:DeploymentName"] ?? "gpt-4o-mini";
+            _modelName = _configuration["AzureOpenAI:ModelName"] ?? "gpt-4o-mini";
+            _apiVersion = _configuration["AzureOpenAI:ApiVersion"] ?? "2024-08-01-preview";
+            _maxTokens = int.Parse(_configuration["AzureOpenAI:MaxTokens"] ?? "4000");
+            _temperature = float.Parse(_configuration["AzureOpenAI:Temperature"] ?? "0.7");
+            _systemPrompt = _configuration["AzureOpenAI:SystemPrompt"] ??
+                "You are an expert SKF bearing assistant. Provide accurate, technical information about SKF bearings based on the provided specifications. Be concise and professional.";
 
-        public async Task<ProductName?> ExtractProductNameAsync(string query, Conversation? conversation = null)
-        {
-            var contextPrompt = BuildContextPrompt(conversation);
-
-            var prompt = $@"
-{contextPrompt}
-
-Extract the SKF product designation from this query. Be very precise and only return product designations that follow SKF naming conventions.
-
-Query: '{query}'
-
-SKF product designations typically follow patterns like:
-- 6205, 6206, 6207 (deep groove ball bearings)  
-- 6205-2RS1, 6206-Z (with suffixes)
-- NU 205, NU 206 (cylindrical roller bearings)
-- 29320 E, 29322 E (spherical roller thrust bearings)
-
-Rules:
-- Return only the exact product designation
-- If no valid SKF product is mentioned, return 'NONE'
-- Do not guess or suggest products
-- Consider conversation context if provided
-
-Examples:
-- 'What is the width of 6205?' → 6205
-- 'Height of bearing 6206-2RS1?' → 6206-2RS1  
-- 'Tell me about bearings' → NONE
-- 'What about the 6207?' (with context showing previous discussion of 6205) → 6207
-";
-
-            var result = await GetCompletionAsync(prompt, temperature: 0.1f);
-            return result == "NONE" ? null : new ProductName(result);
-        }
-
-        public async Task<string?> ExtractAttributeAsync(string query, Conversation? conversation = null)
-        {
-            var contextPrompt = BuildContextPrompt(conversation);
-
-            var prompt = $@"
-{contextPrompt}
-
-Extract the specific attribute being requested from this query. Only return standard bearing attributes.
-
-Query: '{query}'
-
-Valid attributes (return exactly one):
-- inner_diameter (or bore)
-- outer_diameter 
-- width (or thickness)
-- dynamic_load_rating
-- static_load_rating
-- limiting_speed
-- mass (or weight)
-
-Rules:
-- Return only one attribute name from the list above
-- Use the exact terms listed
-- If unclear or not a valid attribute, return 'NONE'
-- Consider conversation context
-
-Examples:
-- 'What is the width of 6205?' → width
-- 'Inner diameter?' → inner_diameter
-- 'How heavy is it?' → mass
-- 'Load capacity?' → dynamic_load_rating
-";
-
-            var result = await GetCompletionAsync(prompt, temperature: 0.1f);
-            return result == "NONE" ? null : result;
-        }
-
-        public async Task<string> GenerateResponseAsync(ProductName productName, string attribute, string value, string unit, Conversation? conversation = null)
-        {
-            var contextPrompt = BuildContextPrompt(conversation);
-
-            var prompt = $@"
-{contextPrompt}
-
-Generate a natural, professional response about this SKF bearing information:
-
-Product: {productName}
-Attribute: {attribute}
-Value: {value}
-Unit: {unit}
-
-Requirements:
-- Be conversational and helpful
-- Include the specific product name
-- Format numbers clearly
-- Keep response concise (1-2 sentences)
-- Consider conversation flow if context provided
-
-Example: 'The inner diameter of the SKF 6205 bearing is 25mm.'
-";
-
-            return await GetCompletionAsync(prompt, temperature: 0.3f);
-        }
-
-        public async Task<bool> ValidateProductExistenceAsync(ProductName productName, List<ProductName> knownProducts)
-        {
-            if (knownProducts.Any(p => string.Equals(p.Value, productName.Value, StringComparison.OrdinalIgnoreCase)))
-                return true;
-
-            var prompt = $@"
-Given this list of known SKF products: {string.Join(", ", knownProducts.Take(50).Select(p => p.Value))}
-
-Is '{productName}' a valid match for any of these products? Consider:
-- Exact matches
-- Minor variations (spaces, dashes, case)
-- Abbreviated forms
-
-Return only 'YES' or 'NO'.
-";
-
-            var result = await GetCompletionAsync(prompt, temperature: 0.0f);
-            return result.Trim().ToUpper() == "YES";
-        }
-
-        public async Task<string> GenerateConversationalResponseAsync(string query, Conversation conversation, ProductDetailsDto? productInfo = null)
-        {
-            var conversationHistory = string.Join("\n", conversation.GetRecentQueries().Select(q => $"- {q}"));
-
-            var prompt = $@"
-You are an SKF bearing specialist assistant. Generate a helpful, conversational response.
-
-Current query: '{query}'
-Conversation ID: {conversation.Id}
-Recent queries:
-{conversationHistory}
-
-Last product discussed: {conversation.LastProductDiscussed?.Value ?? "None"}
-
-";
-
-            if (productInfo != null)
+            var clientOptions = new OpenAIClientOptions()
             {
-                prompt += $@"
-Found information:
-- Product: {productInfo.ProductName}  
-- {productInfo.Attribute}: {productInfo.Value} {productInfo.Unit}
-";
-            }
+                Retry = { NetworkTimeout = TimeSpan.FromSeconds(30) }
+            };
 
-            prompt += @"
-Requirements:
-- Be helpful and professional
-- Reference conversation context when relevant
-- If no information found, offer alternatives or ask clarifying questions
-- Keep responses concise but friendly
-- Suggest related information when appropriate
-";
+            _client = new OpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey), clientOptions);
 
-            return await GetCompletionAsync(prompt, temperature: 0.4f);
+            _logger.LogInformation("Azure OpenAI Service initialized with model: {ModelName}, deployment: {DeploymentName}, API version: {ApiVersion}",
+                _modelName, _deploymentName, _apiVersion);
         }
 
-        private string BuildContextPrompt(Conversation? conversation)
-        {
-            if (conversation == null) return "";
-
-            return $@"
-Conversation context:
-- Last product discussed: {conversation.LastProductDiscussed?.Value ?? "None"}
-- Recent queries: {string.Join(", ", conversation.GetRecentQueries())}
-";
-        }
-
-        private async Task<string> GetCompletionAsync(string prompt, float temperature = 0.3f)
+        public async Task<ProductName?> ExtractProductNameAsync(string query, Conversation conversation)
         {
             try
             {
-                var chatCompletionsOptions = new ChatCompletionsOptions
+                var prompt = BuildProductExtractionPrompt(query, conversation);
+                var response = await CallOpenAIAsync(prompt, maxTokens: 100);
+
+                if (string.IsNullOrWhiteSpace(response))
+                    return null;
+
+                var productName = response.Trim().Replace("\"", "").Replace("'", "");
+
+                if (string.IsNullOrWhiteSpace(productName) || productName.ToLower() == "none" || productName.ToLower() == "unknown")
+                    return null;
+
+                return new ProductName(productName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting product name from query: {Query}", query);
+                return null;
+            }
+        }
+
+        public async Task<string?> ExtractAttributeAsync(string query, Conversation conversation)
+        {
+            try
+            {
+                var prompt = BuildAttributeExtractionPrompt(query, conversation);
+                var response = await CallOpenAIAsync(prompt, maxTokens: 100);
+
+                if (string.IsNullOrWhiteSpace(response))
+                    return null;
+
+                var attribute = response.Trim().Replace("\"", "").Replace("'", "").ToLowerInvariant();
+
+                if (attribute == "none" || attribute == "unknown")
+                    return null;
+
+                return attribute;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting attribute from query: {Query}", query);
+                return null;
+            }
+        }
+
+        public async Task<string> GenerateResponseAsync(ProductName productName, string attributeName,
+            string attributeValue, string? unit, Conversation conversation)
+        {
+            try
+            {
+                var prompt = BuildResponseGenerationPrompt(productName, attributeName, attributeValue, unit, conversation);
+                var response = await CallOpenAIAsync(prompt);
+
+                return response ?? $"The {attributeName} of the SKF {productName} bearing is {attributeValue}{unit}.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating response for product: {ProductName}, attribute: {AttributeName}",
+                    productName, attributeName);
+                return $"The {attributeName} of the SKF {productName} bearing is {attributeValue}{unit}.";
+            }
+        }
+
+        // FIXED: Updated method signature to include ProductDetailsDto parameter
+        public async Task<string> GenerateConversationalResponseAsync(string query, Conversation conversation, ProductDetailsDto? productDetails)
+        {
+            try
+            {
+                var prompt = BuildConversationalPrompt(query, conversation, productDetails);
+                var response = await CallOpenAIAsync(prompt);
+
+                return response ?? "I'm here to help you with SKF bearing information. Please ask me about specific bearings and their properties.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating conversational response for query: {Query}", query);
+                return "I'm here to help you with SKF bearing information. Please ask me about specific bearings and their properties.";
+            }
+        }
+
+        public async Task<ProductName?> ValidateProductExistenceAsync(ProductName productName, List<ProductName> availableProducts)
+        {
+            try
+            {
+                var exactMatch = availableProducts.FirstOrDefault(p =>
+                    string.Equals(p.Value, productName.Value, StringComparison.OrdinalIgnoreCase));
+
+                if (exactMatch != null)
+                {
+                    _logger.LogDebug("Exact match found for product: {ProductName}", productName);
+                    return exactMatch;
+                }
+
+                var prompt = BuildProductValidationPrompt(productName, availableProducts);
+                var response = await CallOpenAIAsync(prompt, maxTokens: 200);
+
+                if (string.IsNullOrWhiteSpace(response))
+                    return null;
+
+                var suggestedProduct = response.Trim().Replace("\"", "").Replace("'", "");
+
+                if (suggestedProduct.ToLower() == "none" || suggestedProduct.ToLower() == "no match")
+                    return null;
+
+                var validMatch = availableProducts.FirstOrDefault(p =>
+                    string.Equals(p.Value, suggestedProduct, StringComparison.OrdinalIgnoreCase));
+
+                if (validMatch != null)
+                {
+                    _logger.LogDebug("AI suggested valid product match: {OriginalProduct} -> {MatchedProduct}",
+                        productName, validMatch);
+                    return validMatch;
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating product existence: {ProductName}", productName);
+                return null;
+            }
+        }
+
+        private async Task<string?> CallOpenAIAsync(string prompt, int? maxTokens = null)
+        {
+            try
+            {
+                var chatCompletionsOptions = new ChatCompletionsOptions()
                 {
                     DeploymentName = _deploymentName,
                     Messages = {
-                        new ChatRequestSystemMessage("You are a precise SKF bearing information assistant. Be accurate and only provide information you're certain about."),
+                        new ChatRequestSystemMessage(_systemPrompt),
                         new ChatRequestUserMessage(prompt)
                     },
-                    Temperature = temperature,
-                    MaxTokens = 200
+                    MaxTokens = maxTokens ?? _maxTokens,
+                    Temperature = _temperature,
+                    FrequencyPenalty = 0,
+                    PresencePenalty = 0
                 };
 
-                var response = await _openAIClient.GetChatCompletionsAsync(chatCompletionsOptions);
-                return response.Value.Choices[0].Message.Content.Trim();
+                var response = await _client.GetChatCompletionsAsync(chatCompletionsOptions);
+
+                if (response?.Value?.Choices?.Count > 0)
+                {
+                    return response.Value.Choices[0].Message.Content;
+                }
+
+                return null;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error calling Azure OpenAI");
                 throw;
             }
+        }
+
+        private string BuildProductExtractionPrompt(string query, Conversation conversation)
+        {
+            var prompt = new StringBuilder();
+            prompt.AppendLine("Extract the SKF bearing product name from the user's query.");
+            prompt.AppendLine("Return only the product name (e.g., '6205', '6206-2RS1', '6025-N') or 'none' if no product is mentioned.");
+
+            if (conversation.LastProductDiscussed != null)
+            {
+                prompt.AppendLine($"Context: Previously discussed product was '{conversation.LastProductDiscussed}'.");
+            }
+
+            prompt.AppendLine($"Query: {query}");
+            prompt.AppendLine("Product name:");
+
+            return prompt.ToString();
+        }
+
+        private string BuildAttributeExtractionPrompt(string query, Conversation conversation)
+        {
+            var prompt = new StringBuilder();
+            prompt.AppendLine("Extract the bearing attribute being asked about from the user's query.");
+            prompt.AppendLine("Common attributes include: width, inner_diameter, outer_diameter, dynamic_load_rating, static_load_rating, limiting_speed, mass");
+            prompt.AppendLine("Return the attribute name in lowercase with underscores or 'none' if unclear.");
+            prompt.AppendLine($"Query: {query}");
+            prompt.AppendLine("Attribute:");
+
+            return prompt.ToString();
+        }
+
+        private string BuildResponseGenerationPrompt(ProductName productName, string attributeName,
+            string attributeValue, string? unit, Conversation conversation)
+        {
+            var prompt = new StringBuilder();
+            prompt.AppendLine("Generate a professional response about the SKF bearing attribute.");
+            prompt.AppendLine($"Product: SKF {productName}");
+            prompt.AppendLine($"Attribute: {attributeName}");
+            prompt.AppendLine($"Value: {attributeValue}{unit}");
+            prompt.AppendLine("Response:");
+
+            return prompt.ToString();
+        }
+
+        // FIXED: Updated to include ProductDetailsDto parameter
+        private string BuildConversationalPrompt(string query, Conversation conversation, ProductDetailsDto? productDetails)
+        {
+            var prompt = new StringBuilder();
+            prompt.AppendLine("Respond to this SKF bearing related query in a helpful, professional manner.");
+            prompt.AppendLine("Keep responses concise and focused on SKF bearings.");
+
+            if (conversation.LastProductDiscussed != null)
+            {
+                prompt.AppendLine($"Context: Previously discussed product was '{conversation.LastProductDiscussed}'.");
+            }
+
+            if (productDetails != null)
+            {
+                prompt.AppendLine($"Current product context: {productDetails.ProductName}");
+
+                if (productDetails.AllAttributes?.Any() == true)
+                {
+                    prompt.AppendLine("Available specifications:");
+                    foreach (var attr in productDetails.AllAttributes.Take(5))
+                    {
+                        prompt.AppendLine($"- {attr.Key}: {attr.Value}");
+                    }
+                }
+            }
+
+            prompt.AppendLine($"Query: {query}");
+            prompt.AppendLine("Response:");
+
+            return prompt.ToString();
+        }
+
+        private string BuildProductValidationPrompt(ProductName productName, List<ProductName> availableProducts)
+        {
+            var prompt = new StringBuilder();
+            prompt.AppendLine("Find the best matching SKF bearing product from the available list.");
+            prompt.AppendLine($"User requested: {productName}");
+            prompt.AppendLine("Available products:");
+
+            foreach (var product in availableProducts.Take(50))
+            {
+                prompt.AppendLine($"- {product}");
+            }
+
+            prompt.AppendLine("Best match:");
+
+            return prompt.ToString();
         }
     }
 }

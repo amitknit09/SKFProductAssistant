@@ -9,7 +9,7 @@ namespace SKFProductAssistant.Application.Interfaces
         Task<ProductName?> ExtractProductNameAsync(string query, Conversation? conversation = null);
         Task<string?> ExtractAttributeAsync(string query, Conversation? conversation = null);
         Task<string> GenerateResponseAsync(ProductName productName, string attribute, string value, string unit, Conversation? conversation = null);
-        Task<bool> ValidateProductExistenceAsync(ProductName productName, List<ProductName> knownProducts);
+        Task<ProductName?> ValidateProductExistenceAsync(ProductName productName, List<ProductName> availableProducts);
         Task<string> GenerateConversationalResponseAsync(string query, Conversation conversation, ProductDetailsDto? productInfo = null);
     }
 }
