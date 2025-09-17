@@ -1,0 +1,18 @@
+﻿{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureFunctionsJobHost__Logging__Console__IsEnabled": "true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+
+    "AzureOpenAI:Endpoint": "",
+    "AzureOpenAI:ApiKey": "",
+    "AzureOpenAI:DeploymentName": "gpt-4o-mini",
+    "AzureOpenAI:ModelName": "gpt-4o-mini",
+    "AzureOpenAI:ApiVersion": "2024-08-01-preview",
+    "AzureOpenAI:MaxTokens": "4000",
+    "AzureOpenAI:Temperature": "0.7",
+
+    "DataPath": "Data"
+  }
+}
