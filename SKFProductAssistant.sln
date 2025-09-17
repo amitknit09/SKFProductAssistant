@@ -13,6 +13,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SKFProductAssistant.Infrast
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SKFProductAssistant.Functions", "src\SKFProductAssistant.Functions\SKFProductAssistant.Functions.csproj", "{C834805D-45C2-1134-FFF3-561A5A215CFB}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{DE3391E8-F372-4A2F-9F85-9DC07CE1F28A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SKFProductAssistant.Functions.IntegrationTests", "tests\SKFProductAssistant.Functions.IntegrationTests\SKFProductAssistant.Functions.IntegrationTests.csproj", "{BF0C8BE7-761B-E437-5607-9547BBECBB2A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -35,6 +39,10 @@ Global
 		{C834805D-45C2-1134-FFF3-561A5A215CFB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C834805D-45C2-1134-FFF3-561A5A215CFB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C834805D-45C2-1134-FFF3-561A5A215CFB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BF0C8BE7-761B-E437-5607-9547BBECBB2A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF0C8BE7-761B-E437-5607-9547BBECBB2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF0C8BE7-761B-E437-5607-9547BBECBB2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF0C8BE7-761B-E437-5607-9547BBECBB2A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -44,6 +52,7 @@ Global
 		{03C55AE7-F8CA-E682-0693-534E27CA9BB6} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{FC0A953A-9083-0834-A2E7-AD0772495884} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{C834805D-45C2-1134-FFF3-561A5A215CFB} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{BF0C8BE7-761B-E437-5607-9547BBECBB2A} = {DE3391E8-F372-4A2F-9F85-9DC07CE1F28A}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BD59904D-323E-49E1-AAA8-48733B234F51}
